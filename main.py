@@ -31,7 +31,7 @@ def place_trade(entry_price, capital, level):
     print(f"🟢 Ulaz na nivou {level+1}: {qty} {symbol}, cena: {entry_price}, TP: {tp_price}, SL: {sl_price}")
 
     order = session.place_order(
-        category="linear",
+        category="spot",
         symbol=symbol,
         side="Buy",
         orderType="Market",
@@ -48,7 +48,7 @@ def run_bot():
     while martingale_level <= max_martingale_levels:
         try:
             capital = get_balance()
-            price_data = session.get_tickers(category="linear", symbol=symbol)
+            price_data = session.get_tickers(category="spot", symbol=symbol)
             current_price = float(price_data["result"]["list"][0]["lastPrice"])
 
             result = place_trade(current_price, capital, martingale_level)
