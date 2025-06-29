@@ -36,8 +36,6 @@ def place_trade(entry_price, capital, level):
         side="Buy",
         orderType="Market",
         qty=qty,
-        takeProfit=str(tp_price),
-        stopLoss=str(sl_price),
         timeInForce="GoodTillCancel"
     )
     return order
