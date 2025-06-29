@@ -1,92 +1,74 @@
-import time
-import requests
-import hmac
-import hashlib
-import json
 import os
-from datetime import datetime
+import time
+from pybit.unified_trading import HTTP
 
-API_KEY = os.environ.get("BYBIT_API_KEY")
-API_SECRET = os.environ.get("BYBIT_API_SECRET")
-BASE_URL = os.environ.get("BYBIT_API_URL")
+# Konfiguracija iz Railway promenljivih (env vars)
+api_key = os.environ.get("BYBIT_API_KEY")
+api_secret = os.environ.get("BYBIT_API_SECRET")
+base_url = os.environ.get("BYBIT_API_URL", "https://api.bybit.com")
 
-SYMBOL = "ETHUSDT"
-RISK_REWARD_RATIO = 2  # 2:1
-TARGET_WIN_RATE = 0.70
-MAX_TRADES_PER_DAY = 60
-MAX_MARTINGALE_LEVEL = 3
-TARGET_DAILY_PROFIT = 0.05  # 5%
+session = HTTP(api_key=api_key, api_secret=api_secret, endpoint=base_url)
 
-trade_count = 0
-martingale_level = 0
-capital = 100000  # demo kapital u USDT
-profit_today = 0
+# Parametri strategije
+symbol = "ETHUSDT"
+leverage = 10
+risk_percent = 0.01  # 1% kapitala
+take_profit_ratio = 2  # R:R 2:1
+max_martingale_levels = 3
 
+def get_balance():
+    balance = session.get_wallet_balance(accountType="UNIFIED")
+    usdt = balance["result"]["list"][0]["coin"][0]["walletBalance"]
+    return float(usdt)
 
-def get_signature(params):
-    sorted_params = sorted(params.items())
-    query_string = "&".join([f"{k}={v}" for k, v in sorted_params])
-    return hmac.new(bytes(API_SECRET, "utf-8"), bytes(query_string, "utf-8"), hashlib.sha256).hexdigest()
+def place_trade(entry_price, capital, level):
+    stake = capital * (risk_percent * (2 ** level))
+    qty = round((stake * leverage) / entry_price, 4)
 
+    tp_price = round(entry_price * (1 + (take_profit_ratio * risk_percent)), 2)
+    sl_price = round(entry_price * (1 - risk_percent), 2)
 
-def place_order(side, qty):
-    endpoint = "/v5/order/create"
-    url = BASE_URL + endpoint
+    print(f"🟢 Ulaz na nivou {level+1}: {qty} {symbol}, cena: {entry_price}, TP: {tp_price}, SL: {sl_price}")
 
-    params = {
-        "category": "linear",
-        "symbol": SYMBOL,
-        "side": side,
-        "orderType": "Market",
-        "qty": qty,
-        "timeInForce": "IOC",
-        "timestamp": int(time.time() * 1000),
-        "apiKey": API_KEY
-    }
-    params["sign"] = get_signature(params)
+    order = session.place_order(
+        category="linear",
+        symbol=symbol,
+        side="Buy",
+        orderType="Market",
+        qty=qty,
+        takeProfit=str(tp_price),
+        stopLoss=str(sl_price),
+        timeInForce="GoodTillCancel"
+    )
+    return order
 
-    response = requests.post(url, headers={"Content-Type": "application/json"}, data=json.dumps(params))
-    return response.json()
+def run_bot():
+    martingale_level = 0
 
+    while martingale_level <= max_martingale_levels:
+        try:
+            capital = get_balance()
+            price_data = session.get_tickers(category="linear", symbol=symbol)
+            current_price = float(price_data["result"]["list"][0]["lastPrice"])
 
-def simulate_signal():
-    """Simulira signal na osnovu win rate logike."""
-    from random import random
-    return random() < TARGET_WIN_RATE
+            result = place_trade(current_price, capital, martingale_level)
 
+            print(f"🛠 Naloga poslat. Čekam 5 minuta...")
+            time.sleep(300)
 
-def execute_trade():
-    global trade_count, martingale_level, capital, profit_today
+            # Ovde bi išla evaluacija ishoda, za sada simulacija
+            trade_successful = True  # simulirano
 
-    if trade_count >= MAX_TRADES_PER_DAY:
-        print("Max trades reached.")
-        return
+            if trade_successful:
+                print("✅ Trade uspešan. Resetujem Martingale.")
+                martingale_level = 0
+            else:
+                print("❌ Trade neuspešan. Idemo na sledeći Martingale nivo.")
+                martingale_level += 1
 
-    stake = (capital * 0.01) * (2 ** martingale_level)
-    qty = round(stake / 3400, 3)  # approx ETH price (adjustable)
-    side = "Buy"
+        except Exception as e:
+            print(f"Greška: {e}")
+            time.sleep(60)
 
-    print(f"Trade {trade_count+1}: {side} {qty} ETH @ martingale level {martingale_level}")
-    result = place_order(side, qty)
-    print("Order result:", result)
-
-    win = simulate_signal()
-    pnl = stake * RISK_REWARD_RATIO if win else -stake
-    capital += pnl
-    profit_today += pnl / 100000
-
-    print(f"Trade result: {'WIN' if win else 'LOSS'} | PnL: {pnl:.2f} | Capital: {capital:.2f} | Daily Profit: {profit_today*100:.2f}%")
-
-    if win:
-        martingale_level = 0
-    else:
-        martingale_level = min(martingale_level + 1, MAX_MARTINGALE_LEVEL)
-
-    trade_count += 1
-
-
-# === Glavna petlja ===
-while profit_today < TARGET_DAILY_PROFIT and trade_count < MAX_TRADES_PER_DAY:
-    execute_trade()
-    time.sleep(10)  # Pauza između trejdova
-
+if __name__ == "__main__":
+    run_bot()
