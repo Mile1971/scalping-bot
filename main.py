@@ -7,7 +7,7 @@ api_key = os.environ.get("BYBIT_API_KEY")
 api_secret = os.environ.get("BYBIT_API_SECRET")
 base_url = os.environ.get("BYBIT_API_URL", "https://api.bybit.com")
 
-session = HTTP(api_key=api_key, api_secret=api_secret, endpoint=base_url)
+session = HTTP(api_key=api_key, api_secret=api_secret)
 
 # Parametri strategije
 symbol = "ETHUSDT"
